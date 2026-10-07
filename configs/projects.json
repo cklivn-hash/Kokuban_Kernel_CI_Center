@@ -320,7 +320,7 @@
     "repo": "YuzakiKokuban/android_kernel_xiaomi_sm8850",
     "defconfig": "gki_defconfig",
     "localversion_base": "-android16-Kokuban-SilverWolf",
-    "expected_kernel_version": "6.12.69",
+    "expected_kernel_version": "6.12.23",
     "supported_ksu": [
       "bakasu"
     ],
