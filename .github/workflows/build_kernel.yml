@@ -281,7 +281,7 @@ jobs:
           EOF
           chmod +x "$hooks/post-checkout"
           git config --global core.hooksPath "$hooks"
-          echo "::warning::SuSFS build gate bypassed: BakaSU marks this combination as unsupported."
+          echo "::warning::SuSFS is INCLUDED. BakaSU 'Please wait susfs update' lock was removed (combination not officially supported by BakaSU)."
 
       - name: Build and Release
         env:
