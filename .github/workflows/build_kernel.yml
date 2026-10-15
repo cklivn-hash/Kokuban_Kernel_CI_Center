@@ -64,6 +64,10 @@ on:
         type: string
         required: false
         default: ''
+      unlock_susfs:
+        description: 'Bypass BakaSU "Please wait susfs update" gate (unsupported, may be detectable)'
+        type: boolean
+        default: false
   repository_dispatch:
     types: [build-kernel]
   workflow_call:
@@ -101,6 +105,9 @@ on:
       lto:
         type: string
         default: ''
+      unlock_susfs:
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -255,6 +262,26 @@ jobs:
               echo "Created $HOME/.local/bin/$name -> $(command -v ld.lld)"
             fi
           done
+
+      - name: Unlock BakaSU SuSFS build gate
+        if: inputs.unlock_susfs == true && env.APPLY_SUSFS == 'true'
+        run: |
+          # BakaSU (since 48fa4bb7) stops every SuSFS build with
+          # "$(error Please wait susfs update.)" in kernel/tools/susfs_compat.mk.
+          # setup.sh clones BakaSU and checks out the requested ref; this post-checkout
+          # hook strips that gate from the working tree after each checkout.
+          hooks="$RUNNER_TEMP/ksu-unlock-hooks"
+          mkdir -p "$hooks"
+          cat > "$hooks/post-checkout" <<'EOF'
+          #!/bin/sh
+          f=kernel/tools/susfs_compat.mk
+          [ -f "$f" ] && grep -q 'Please wait susfs update' "$f" || exit 0
+          sed -i '/Please wait susfs update/d;/Please wait simonpunk update/d;/susfs has NOT update with latest KernelSU source/d' "$f"
+          echo "[unlock] removed BakaSU SuSFS build gate in $PWD"
+          EOF
+          chmod +x "$hooks/post-checkout"
+          git config --global core.hooksPath "$hooks"
+          echo "::warning::SuSFS build gate bypassed: BakaSU marks this combination as unsupported."
 
       - name: Build and Release
         env:
