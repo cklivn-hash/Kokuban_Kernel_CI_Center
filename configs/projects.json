@@ -317,7 +317,7 @@
     }
   },
   "mi17_sm8850": {
-    "repo": "YuzakiKokuban/android_kernel_xiaomi_sm8850",
+    "repo": "cklivn-hash/android_kernel_xiaomi_sm8850",
     "defconfig": "gki_defconfig",
     "localversion_base": "-android16-Kokuban-SilverWolf",
     "expected_kernel_version": "6.12.23",
