@@ -60,10 +60,10 @@ const GKI_KSU_OFFICIAL_KCONFIG_ENTRIES: &[(&str, &str)] = &[("CONFIG_KSU", "y")]
 
 /// setup.sh for the official KernelSU built-in integration.
 const KSU_OFFICIAL_SETUP_URL: &str =
-    "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh";
+    "https://raw.githubusercontent.com/cklivn-hash/KernelSU/susfs/kernel/setup.sh";
 /// KernelSU commit that the current susfs4ksu `gki-android16-6.12` KernelSU-side
 /// patch applies cleanly against. Pinned for reproducibility.
-const KSU_OFFICIAL_SETUP_ARG: &str = "4663610011d03771a64e7c36a2aa65bd1794022d";
+const KSU_OFFICIAL_SETUP_ARG: &str = "susfs";
 /// Path (inside the susfs4ksu checkout) of the patch that adds SuSFS support to
 /// the official KernelSU driver.
 const SUSFS_KSU_PATCH_PATH: &str = "kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch";
@@ -2818,7 +2818,9 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
                 .ok_or_else(|| anyhow!("Project {} does not define a SuSFS source", project_key))?;
             // Official KernelSU ships no SuSFS in its driver, so it also needs the
             // susfs4ksu KernelSU-side patch applied to the cloned KernelSU tree.
-            let apply_ksu_patch = is_ksu_official_variant(&branch);
+            // Our fork (cklivn-hash/KernelSU@susfs) is already ksu-susfs patched
+            // (incl. the Kbuild realpath include fix), so do NOT re-apply the patch.
+            let apply_ksu_patch = false;
             apply_susfs_overlay(&kernel_source_path, susfs, apply_ksu_patch)?;
             let defconfig_file = project_defconfig_path(&kernel_source_path, &proj.defconfig)?;
             update_kconfig_file(&defconfig_file, SUSFS_KCONFIG_ENTRIES)?;
