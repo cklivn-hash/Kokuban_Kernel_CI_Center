@@ -155,12 +155,20 @@ pub fn variant_suffix(variant: &str) -> String {
     match normalize_variant_name(variant).as_str() {
         "main" | "lkm" => "LKM".to_string(),
         "bakasu" => "BakaSU".to_string(),
+        "ksu" => "KernelSU".to_string(),
         _ => variant.to_uppercase(),
     }
 }
 
 pub fn is_bakasu_variant(variant: &str) -> bool {
     normalize_variant_name(variant) == "bakasu"
+}
+
+/// Official KernelSU (tiann) built-in variant. Unlike `bakasu`, its driver does
+/// not ship SuSFS, so a SuSFS build must also apply the susfs4ksu KernelSU-side
+/// patch and skip the BakaSU-only Kconfig entries.
+pub fn is_ksu_official_variant(variant: &str) -> bool {
+    normalize_variant_name(variant) == "ksu"
 }
 
 pub fn save_json<T: serde::Serialize>(path: &Path, data: &T) -> Result<()> {

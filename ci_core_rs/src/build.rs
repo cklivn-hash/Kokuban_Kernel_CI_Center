@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use crate::config::{AbiBaseline, AnyKernelConfig, BbgConfig, ProjectConfig, SusfsConfig};
 use crate::utils::{
     cache_file_name, command_exists, env_flag, file_sha256, handle_notify, is_bakasu_variant,
-    load_anykernel_config, load_project, run_cmd, run_cmd_with_env, set_github_output,
-    url_file_name, variant_suffix,
+    is_ksu_official_variant, load_anykernel_config, load_project, run_cmd, run_cmd_with_env,
+    set_github_output, url_file_name, variant_suffix,
 };
 
 const ANYKERNEL_REPO: &str = "https://github.com/YuzakiKokuban/AnyKernel3.git";
@@ -52,6 +52,21 @@ const GKI_KSU_KCONFIG_ENTRIES: &[(&str, &str)] = &[
         "\"%TAG_NAME%-%COMMIT_SHA%-KokubanKernel@%REPO_NAME%\"",
     ),
 ];
+
+/// Official KernelSU (tiann) does not define the BakaSU-only manager/name-format
+/// symbols, so its built-in build enables only the base `CONFIG_KSU`. The SuSFS
+/// features come from `SUSFS_KCONFIG_ENTRIES` applied by the SuSFS overlay.
+const GKI_KSU_OFFICIAL_KCONFIG_ENTRIES: &[(&str, &str)] = &[("CONFIG_KSU", "y")];
+
+/// setup.sh for the official KernelSU built-in integration.
+const KSU_OFFICIAL_SETUP_URL: &str =
+    "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh";
+/// KernelSU commit that the current susfs4ksu `gki-android16-6.12` KernelSU-side
+/// patch applies cleanly against. Pinned for reproducibility.
+const KSU_OFFICIAL_SETUP_ARG: &str = "4663610011d03771a64e7c36a2aa65bd1794022d";
+/// Path (inside the susfs4ksu checkout) of the patch that adds SuSFS support to
+/// the official KernelSU driver.
+const SUSFS_KSU_PATCH_PATH: &str = "kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch";
 
 fn verify_toolchain_checksum(
     url: &str,
@@ -1568,7 +1583,11 @@ fn ensure_bbg_lsm(content: &str) -> String {
     lines.join("\n") + "\n"
 }
 
-fn apply_susfs_overlay(kernel_source_path: &Path, susfs: &SusfsConfig) -> Result<()> {
+fn apply_susfs_overlay(
+    kernel_source_path: &Path,
+    susfs: &SusfsConfig,
+    apply_ksu_patch: bool,
+) -> Result<()> {
     let temp_dir = kernel_source_path.join(".susfs_workspace");
     if temp_dir.exists() {
         fs::remove_dir_all(&temp_dir)?;
@@ -1630,6 +1649,33 @@ fn apply_susfs_overlay(kernel_source_path: &Path, susfs: &SusfsConfig) -> Result
         kernel_source_path,
         &["common".to_string(), "kernel_platform/common".to_string()],
     )?;
+
+    if apply_ksu_patch {
+        let ksu_patch = temp_dir.join(SUSFS_KSU_PATCH_PATH);
+        if !ksu_patch.exists() {
+            fs::remove_dir_all(&temp_dir)?;
+            return Err(anyhow!(
+                "SuSFS KernelSU-side patch not found: {:?}",
+                ksu_patch
+            ));
+        }
+        let ksu_dir = kernel_source_path.join("KernelSU");
+        if !ksu_dir.is_dir() {
+            fs::remove_dir_all(&temp_dir)?;
+            return Err(anyhow!(
+                "KernelSU source dir not found at {:?}; run KernelSU setup before SuSFS",
+                ksu_dir
+            ));
+        }
+        if !apply_patch_once(&ksu_patch, &ksu_dir)? {
+            fs::remove_dir_all(&temp_dir)?;
+            return Err(anyhow!(
+                "Failed to apply SuSFS KernelSU-side patch {:?} in {:?}",
+                ksu_patch,
+                ksu_dir
+            ));
+        }
+    }
 
     fs::remove_dir_all(&temp_dir)?;
     Ok(())
@@ -2076,7 +2122,7 @@ fn apply_kconfig_fragment(
 fn prepare_gki_build(
     kernel_source_path: &Path,
     proj: &ProjectConfig,
-    enable_ksu: bool,
+    ksu_entries: &[(&str, &str)],
 ) -> Result<()> {
     let build_config_path = kernel_source_path.join("build.config.gki");
     if build_config_path.exists() {
@@ -2095,9 +2141,7 @@ fn prepare_gki_build(
         ("CONFIG_TMPFS_POSIX_ACL", "y"),
     ];
     entries.extend_from_slice(GKI_CUSTOM_KCONFIG_ENTRIES);
-    if enable_ksu {
-        entries.extend_from_slice(GKI_KSU_KCONFIG_ENTRIES);
-    }
+    entries.extend_from_slice(ksu_entries);
     update_kconfig_file(&defconfig_file, &entries)
 }
 
@@ -2748,6 +2792,9 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
             "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh",
             bakasu_setup_arg,
         )),
+        _ if is_ksu_official_variant(&branch) => {
+            Some((KSU_OFFICIAL_SETUP_URL, KSU_OFFICIAL_SETUP_ARG))
+        }
         _ => None,
     };
 
@@ -2764,18 +2811,21 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
     }
 
     if apply_susfs {
-        if is_bakasu_variant(&branch) {
+        if is_bakasu_variant(&branch) || is_ksu_official_variant(&branch) {
             let susfs = proj
                 .susfs
                 .as_ref()
                 .ok_or_else(|| anyhow!("Project {} does not define a SuSFS source", project_key))?;
-            apply_susfs_overlay(&kernel_source_path, susfs)?;
+            // Official KernelSU ships no SuSFS in its driver, so it also needs the
+            // susfs4ksu KernelSU-side patch applied to the cloned KernelSU tree.
+            let apply_ksu_patch = is_ksu_official_variant(&branch);
+            apply_susfs_overlay(&kernel_source_path, susfs, apply_ksu_patch)?;
             let defconfig_file = project_defconfig_path(&kernel_source_path, &proj.defconfig)?;
             update_kconfig_file(&defconfig_file, SUSFS_KCONFIG_ENTRIES)?;
             feature_suffixes.push("susfs".to_string());
         } else {
             println!(
-                "Skipping SuSFS for branch '{}': SuSFS is only enabled for BakaSU builds.",
+                "Skipping SuSFS for branch '{}': SuSFS is only enabled for KernelSU builds.",
                 branch
             );
         }
@@ -2916,8 +2966,18 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
         apply_gki_localversion(&kernel_source_path, &proj.defconfig, &localversion)?;
     }
 
+    // Which KSU Kconfig entries to enable/validate: none without a setup.sh,
+    // the reduced base set for official KernelSU, the BakaSU set otherwise.
+    let ksu_kconfig_entries: &[(&str, &str)] = if setup_url.is_none() {
+        &[]
+    } else if is_ksu_official_variant(&branch) {
+        GKI_KSU_OFFICIAL_KCONFIG_ENTRIES
+    } else {
+        GKI_KSU_KCONFIG_ENTRIES
+    };
+
     if is_gki_612 {
-        prepare_gki_build(&kernel_source_path, &proj, setup_url.is_some())?;
+        prepare_gki_build(&kernel_source_path, &proj, ksu_kconfig_entries)?;
     }
 
     if is_gki_612 {
@@ -3036,10 +3096,10 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
     if is_gki_612 {
         validate_kconfig_entries(&final_config, GKI_CUSTOM_KCONFIG_ENTRIES)?;
         if setup_url.is_some() {
-            validate_kconfig_entries(&final_config, GKI_KSU_KCONFIG_ENTRIES)?;
+            validate_kconfig_entries(&final_config, ksu_kconfig_entries)?;
         }
     }
-    if apply_susfs && is_bakasu_variant(&branch) {
+    if apply_susfs && (is_bakasu_variant(&branch) || is_ksu_official_variant(&branch)) {
         validate_kconfig_entries(&final_config, SUSFS_KCONFIG_ENTRIES)?;
     }
 
