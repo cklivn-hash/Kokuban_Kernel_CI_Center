@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use crate::config::{AbiBaseline, AnyKernelConfig, BbgConfig, ProjectConfig, SusfsConfig};
 use crate::utils::{
     cache_file_name, command_exists, env_flag, file_sha256, handle_notify, is_bakasu_variant,
-    is_ksu_next_variant, is_ksu_official_variant, load_anykernel_config, load_project, run_cmd, run_cmd_with_env,
-    set_github_output, url_file_name, variant_suffix,
+    is_ksu_next_variant, is_ksu_official_variant, load_anykernel_config, load_project, run_cmd,
+    run_cmd_with_env, set_github_output, url_file_name, variant_suffix,
 };
 
 const ANYKERNEL_REPO: &str = "https://github.com/YuzakiKokuban/AnyKernel3.git";
