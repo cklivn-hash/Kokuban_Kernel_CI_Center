@@ -28,6 +28,7 @@ on:
           - bakasu
           - lkm
           - ksu
+          - ksun
         default: 'default'
       do_release:
         description: 'Create Release'

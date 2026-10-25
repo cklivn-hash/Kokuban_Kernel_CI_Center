@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::config::{AbiBaseline, AnyKernelConfig, BbgConfig, ProjectConfig, SusfsConfig};
 use crate::utils::{
     cache_file_name, command_exists, env_flag, file_sha256, handle_notify, is_bakasu_variant,
-    is_ksu_official_variant, load_anykernel_config, load_project, run_cmd, run_cmd_with_env,
+    is_ksu_next_variant, is_ksu_official_variant, load_anykernel_config, load_project, run_cmd, run_cmd_with_env,
     set_github_output, url_file_name, variant_suffix,
 };
 
@@ -64,6 +64,11 @@ const KSU_OFFICIAL_SETUP_URL: &str =
 /// KernelSU commit that the current susfs4ksu `gki-android16-6.12` KernelSU-side
 /// patch applies cleanly against. Pinned for reproducibility.
 const KSU_OFFICIAL_SETUP_ARG: &str = "susfs";
+/// setup.sh for KernelSU-Next; the `susfs` branch of the fork already carries the
+/// SuSFS KernelSU-side port.
+const KSU_NEXT_SETUP_URL: &str =
+    "https://raw.githubusercontent.com/cklivn-hash/KernelSU-Next/susfs/kernel/setup.sh";
+const KSU_NEXT_SETUP_ARG: &str = "susfs";
 /// Path (inside the susfs4ksu checkout) of the patch that adds SuSFS support to
 /// the official KernelSU driver.
 const SUSFS_KSU_PATCH_PATH: &str = "kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch";
@@ -1625,7 +1630,6 @@ fn apply_susfs_overlay(
         ],
     )
     .ok_or_else(|| anyhow!("Could not locate kernel fs directory for SuSFS"))?;
-    copy_dir_files(&fs_source, &fs_target)?;
 
     let include_source = temp_dir.join(
         susfs
@@ -1642,13 +1646,19 @@ fn apply_susfs_overlay(
         ],
     )
     .ok_or_else(|| anyhow!("Could not locate kernel include/linux directory for SuSFS"))?;
-    copy_dir_files(&include_source, &include_target)?;
-
-    apply_patch_with_fallbacks(
-        &patch_path,
-        kernel_source_path,
-        &["common".to_string(), "kernel_platform/common".to_string()],
-    )?;
+    // A kernel branch may carry the SuSFS kernel patch pre-applied (hand-ported where
+    // the upstream patch only applies with fuzz); re-applying it would duplicate hunks.
+    if fs_target.join("susfs.c").exists() {
+        println!("SuSFS kernel patch already present in source tree, skipping patch apply.");
+    } else {
+        copy_dir_files(&fs_source, &fs_target)?;
+        copy_dir_files(&include_source, &include_target)?;
+        apply_patch_with_fallbacks(
+            &patch_path,
+            kernel_source_path,
+            &["common".to_string(), "kernel_platform/common".to_string()],
+        )?;
+    }
 
     if apply_ksu_patch {
         let ksu_patch = temp_dir.join(SUSFS_KSU_PATCH_PATH);
@@ -2792,6 +2802,7 @@ pub fn handle_build(options: BuildOptions) -> Result<()> {
             "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh",
             bakasu_setup_arg,
         )),
+        _ if is_ksu_next_variant(&branch) => Some((KSU_NEXT_SETUP_URL, KSU_NEXT_SETUP_ARG)),
         _ if is_ksu_official_variant(&branch) => {
             Some((KSU_OFFICIAL_SETUP_URL, KSU_OFFICIAL_SETUP_ARG))
         }
