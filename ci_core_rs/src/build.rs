@@ -59,11 +59,17 @@ const GKI_KSU_KCONFIG_ENTRIES: &[(&str, &str)] = &[
 const GKI_KSU_OFFICIAL_KCONFIG_ENTRIES: &[(&str, &str)] = &[("CONFIG_KSU", "y")];
 
 /// setup.sh for the official KernelSU built-in integration.
+///
+/// `susfs-20261026`: rebuilt from a fresh tiann/KernelSU@main (commit 75e179d3,
+/// 2026-10-26) + susfs4ksu's current KernelSU-side patch (3ff9fd3, incl. the new
+/// priority-uid filter command), with our five Kbuild/preinit fixes re-applied.
+/// The old `susfs` branch (base commit 46636100) predates upstream's "module
+/// preinit" rework and no longer matches what the current susfs4ksu patch expects.
 const KSU_OFFICIAL_SETUP_URL: &str =
-    "https://raw.githubusercontent.com/cklivn-hash/KernelSU/susfs/kernel/setup.sh";
+    "https://raw.githubusercontent.com/cklivn-hash/KernelSU/susfs-20261026/kernel/setup.sh";
 /// KernelSU commit that the current susfs4ksu `gki-android16-6.12` KernelSU-side
 /// patch applies cleanly against. Pinned for reproducibility.
-const KSU_OFFICIAL_SETUP_ARG: &str = "susfs";
+const KSU_OFFICIAL_SETUP_ARG: &str = "susfs-20261026";
 /// setup.sh for KernelSU-Next; the `susfs` branch of the fork already carries the
 /// SuSFS KernelSU-side port.
 const KSU_NEXT_SETUP_URL: &str =
